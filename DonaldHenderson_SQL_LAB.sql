@@ -201,7 +201,18 @@ end;
 $$ language plpgsql;
 
 -- 5.0 Transactions (need first)
--- 	Create a transaction that given a invoiceId will delete that invoice (There may be constraints that rely on this, find out how to resolve them).
+-- 	Create a transaction that given a invoiceId will delete that invoice
+alter table invoiceline drop constraint fk_invoicelineinvoiceid;
+
+create function delete_invoice(int)
+returns void
+language plpgsql
+as $$
+begin
+	delete from invoice
+	where invoiceid = $1;
+end;
+$$;
 
 --	Create a transaction nested within a stored procedure that inserts a new record in the Customer table
 create function insert_employee(int, varchar, varchar, varchar, int, timestamp, timestamp, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar)
