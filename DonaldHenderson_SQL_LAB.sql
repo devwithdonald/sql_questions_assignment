@@ -187,7 +187,7 @@ $$;
 
 -- 4.3 Stored Procedure Output Parameters
 --	Create a stored procedure that returns the name and company of a customer.
-create function get_name_and_company()
+create function get_name_and_company(int)
 returns table (
 	first_name varchar,
 	last_name varchar,
@@ -196,7 +196,8 @@ returns table (
 as $$
 begin
 	return query select firstname, lastname, company
-	from customer;
+	from customer
+	where customerId = $1;
 end;
 $$ language plpgsql;
 
