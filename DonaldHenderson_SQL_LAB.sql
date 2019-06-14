@@ -96,7 +96,7 @@ where firstname = 'Robert' and lastname = 'Walter';
 
 -- 3.0 SQL FUNCTIONS
 -- 3.1 System Defined Functions
---	Create a function that returns the current time.
+--	Create a function that returns the current time. 
 select now();
 
 --	ceate a function that returns the length of a mediatype from the mediatype table
@@ -112,25 +112,25 @@ select  max(unitprice) as "Most Expensive Track" from track;
 
 -- 3.3 User Defined Scalar Functions
 -- 	Create a function that returns the average price of invoiceline items in the invoiceline table
-create function avg_invoice() 
-returns numeric as $average$
-declare 
-	average numeric;
+CREATE OR REPLACE FUNCTION avg_invoice_function()
+ RETURNS TABLE(invoice_id integer, unitprice_average numeric)
+ LANGUAGE plpgsql
+AS $function$
 begin
-	select avg(unitprice) into average from invoiceline;
-	return average;
+		return query select invoiceid, avg(unitprice)
+		from invoiceline
+		group by invoiceid
+		order by invoiceid asc;
 end; 
-$average$ language plpgsql;
+$function$
+;
 
 -- 3.4 User Defined Table Valued Functions
 --	Create a function that returns all employees who are born after 1968.
-create function bornafter1968()
-returns table(
-	first_name varchar,
-	last_name varchar, 
-	birth_date timestamp
-)
-as $$
+CREATE OR REPLACE FUNCTION bornafter1968()
+ RETURNS TABLE(first_name varchar, last_name varchar, birth_date timestamp)
+ LANGUAGE plpgsql
+AS $function$
 begin
 	return query select 
 	  firstname, lastname, birthdate
@@ -138,114 +138,148 @@ begin
 	  employee
 	where 
 	  birthdate > '1968-01-01 00:00:00';
-end; $$
-language plpgsql;
+end; $function$
+;
 
 -- 4.0 Stored Procedures
 -- 4.1 Basic Stored Procedures
 --	Create a stored procedure that selects the first and last names of all the employees.
-create function get_names()
-returns table(
-	first_name varchar,
-	last_name varchar
-)
-language plpgsql
-as $$
+CREATE OR REPLACE FUNCTION get_names_proc(INOUT curs refcursor)
+ LANGUAGE plpgsql
+AS $function$
 begin
-	return query select firstname, lastname
+	open curs for select firstname, lastname
 	from employee;
-end;
-$$;
+end; $function$
+;
 
 -- 4.2 Store Procedue Input Parameters
 --	Create a stored procedure that updates the personal information of an employee.
-create function update_employee(int, varchar, varchar, varchar, int, timestamp, timestamp, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar)
-returns void
-language plpgsql
-as $$
+CREATE OR REPLACE FUNCTION update_employee_proc(integer, varchar, varchar, varchar, integer, timestamp, timestamp, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
 begin
 	update employee
 	set lastname = $2, firstname = $3, title = $4, reportsto = $5, birthdate = $6, hiredate = $7, address = $8, city = $9, state = $10, country = $11, postalcode = $12, phone = $13, fax = $14, email = $15
 	where employeeid = $1;
-end;
-$$;
+end; $function$
+;
 
 --	Create a stored procedure that returns the managers of an employee.
-create function get_manager(int)
-returns table (
-	first_name varchar,
-	last_name varchar
-)
-language plpgsql
-as $$
+CREATE OR REPLACE FUNCTION get_manager_proc(IN emp_id integer, OUT manager_name varchar)
+ LANGUAGE plpgsql
+AS $function$
 begin
-    return query select firstname, lastname from employee where employeeid = 
+    select firstname || ' ' || lastname into manager_name from employee where employeeid = 
 	    (select reportsto from employee where employeeid = $1);
-end;
-$$;
+end; $function$
+;
 
 
 -- 4.3 Stored Procedure Output Parameters
 --	Create a stored procedure that returns the name and company of a customer.
-create function get_name_and_company(int)
-returns table (
-	first_name varchar,
-	last_name varchar,
-	company_name varchar
-)
-as $$
+CREATE OR REPLACE FUNCTION get_name_and_company_proc(IN cust_id integer, OUT cust_name varchar, OUT cust_company varchar)
+ LANGUAGE plpgsql
+AS $function$
 begin
-	return query select firstname, lastname, company
+	select firstname || ' ' || lastname, company into cust_name, cust_company
 	from customer
 	where customerId = $1;
 end;
-$$ language plpgsql;
+$function$
+;
 
--- 5.0 Transactions (need first)
+
+
+-- 5.0 Transactions 
 -- 	Create a transaction that given a invoiceId will delete that invoice
 alter table invoiceline drop constraint fk_invoicelineinvoiceid;
 
-create function delete_invoice(int)
-returns void
-language plpgsql
-as $$
+CREATE OR REPLACE FUNCTION delete_invoice(integer)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
 begin
 	delete from invoice
 	where invoiceid = $1;
 end;
-$$;
+$function$
+;
 
 --	Create a transaction nested within a stored procedure that inserts a new record in the Customer table
-create function insert_employee(int, varchar, varchar, varchar, int, timestamp, timestamp, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar)
-returns void
-language plpgsql
-as $$
+CREATE OR REPLACE FUNCTION insert_employee_proc(integer, varchar, varchar, varchar, integer, timestamp, timestamp, varchar, varchar, varchar, varchar, varchar, varchar, varchar, varchar)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
 begin
 	insert into employee(employeeid, lastname, firstname, title, reportsto, birthdate, hiredate, address, city, state, country, postalcode, phone, fax, email)
 	values
 		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15);
-end;
-$$;
+	commit; 
+end; $function$
+;
 
 -- 6.0 Triggers
 -- 6.1 AFTER/FOR
 --	Create an after insert trigger on the employee table fired after a new record is inserted into the table.
-create trigger after_insert 
-	after insert on employee
-	for each row
-	execute procedure some_function();
+CREATE OR REPLACE FUNCTION delete_after_employee()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+	if (TG_OP = 'DELETE') then
+		insert into employee(employeeid,lastname,firstname)
+			values((select nextval('employee_id_sequence'), 'last','first'));
+	end if;
+	return new;
+end; $function$
+;
+
+create trigger after_employee_insert 
+after insert on employee 
+for each row 
+execute procedure insert_into_employee();
 
 --	Create an after update trigger on the album table that fires after a row is inserted in the table
-create trigger after_update 
-	after update on album
-	for each row
-	execute procedure some_function();
+CREATE OR REPLACE FUNCTION update_after_album()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+	if (TG_OP = 'INSERT') then
+		update album
+		set title = 'new'
+		where albumid = new.albumid;
+	end if;
+	return new;
+end; $function$
+;
+
+ccreate trigger after_update 
+after update on album 
+for each row 
+execute procedure update_after_album();
 
 --	Create an after delete trigger on the customer table that fires after a row is deleted from the table.
+create sequence customer_postal_sequence start 70;
+
+create or replace function delete_after_customer()
+returns trigger as $$
+begin
+	if (TG_OP = 'DELETE') then
+		update customer
+		set postalcode = (select nextval('customer_postal_sequence'))
+		where customerid = 6;
+	end if;
+	return new;
+end; $$ language plpgsql;
+
+
 create trigger after_delete 
 	after delete on customer
 	for each row
-	execute procedure some_function();
+	execute procedure delete_after_customer();
 
 -- 7.0 JOINS
 -- 7.1 INNER
